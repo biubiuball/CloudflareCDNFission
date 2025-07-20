@@ -1,0 +1,48 @@
+name: Fission Asset Discovery
+
+on:
+  workflow_dispatch:  # 手动触发
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get update
+          sudo apt-get install -y dnsutils  # 安装nslookup工具
+
+      - name: Initialize files
+        run: |
+          touch Fission_ip.txt
+          touch Fission_domain.txt
+
+      - name: Run Fission discovery (multiple iterations)
+        run: |
+          # 设置循环次数（建议3-5次）
+          ITERATIONS=3
+          
+          for ((i=1; i<=$ITERATIONS; i++))
+          do
+            echo "🚀 Running iteration $i/$ITERATIONS..."
+            python Fission.py
+            echo "--------------------------------------"
+          done
+
+      - name: Archive results
+        uses: actions/upload-artifact@v4
+        with:
+          name: fission-results
+          path: |
+            Fission_domain.txt
+            Fission_ip.txt
+            dns_result.txt
