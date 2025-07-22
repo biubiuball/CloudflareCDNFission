@@ -6,12 +6,14 @@ on:
 jobs:
   discover:
     runs-on: ubuntu-latest
+    permissions: 
+      contents: write  # 关键权限设置
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # 添加token获取写入权限
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}  # 使用内置令牌
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,18 +24,16 @@ jobs:
         run: |
           pip install -r requirements.txt
           sudo apt-get update
-          sudo apt-get install -y dnsutils  # 安装nslookup工具
+          sudo apt-get install -y dnsutils
 
       - name: Initialize files
         run: |
           touch Fission_ip.txt
           touch Fission_domain.txt
 
-      - name: Run Fission discovery (multiple iterations)
+      - name: Run Fission discovery
         run: |
-          # 设置循环次数（建议3-5次）
           ITERATIONS=3
-          
           for ((i=1; i<=$ITERATIONS; i++))
           do
             echo "🚀 Running iteration $i/$ITERATIONS..."
@@ -41,24 +41,15 @@ jobs:
             echo "--------------------------------------"
           done
 
-      # 新增步骤：提交结果到仓库
-      - name: Commit results to repository
+      - name: Commit results
         run: |
-          # 配置Git用户信息
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          # 添加结果文件到暂存区
-          git add Fission_domain.txt
-          git add Fission_ip.txt
-          
-          # 检查是否有变更需要提交
-          if [[ -n $(git status --porcelain) ]]; then
-            git commit -m "Automatically update discovery results [skip ci]"
-            git push
-          else
-            echo "No changes to commit"
-          fi
+          # 添加并提交变更
+          git add Fission_domain.txt Fission_ip.txt
+          git diff-index --quiet HEAD || git commit -m "Auto-update discovery results [skip ci]"
+          git push
 
       - name: Archive results
         uses: actions/upload-artifact@v4
