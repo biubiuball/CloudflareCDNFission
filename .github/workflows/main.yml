@@ -9,6 +9,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # 添加token获取写入权限
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,6 +40,25 @@ jobs:
             python Fission.py
             echo "--------------------------------------"
           done
+
+      # 新增步骤：提交结果到仓库
+      - name: Commit results to repository
+        run: |
+          # 配置Git用户信息
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # 添加结果文件到暂存区
+          git add Fission_domain.txt
+          git add Fission_ip.txt
+          
+          # 检查是否有变更需要提交
+          if [[ -n $(git status --porcelain) ]]; then
+            git commit -m "Automatically update discovery results [skip ci]"
+            git push
+          else
+            echo "No changes to commit"
+          fi
 
       - name: Archive results
         uses: actions/upload-artifact@v4
