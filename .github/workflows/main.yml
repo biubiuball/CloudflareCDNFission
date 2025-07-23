@@ -7,13 +7,13 @@ jobs:
   discover:
     runs-on: ubuntu-latest
     permissions: 
-      contents: write  # 关键权限设置
+      contents: write
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # 使用内置令牌
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -26,14 +26,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dnsutils
 
-      - name: Initialize files
+      - name: Initialize files if missing
         run: |
           touch Fission_ip.txt
           touch Fission_domain.txt
+          touch dns_result.txt
 
-      - name: Run Fission discovery
+      - name: Run Fission discovery (iterative)
         run: |
+          # 设置循环次数（建议3-5次）
           ITERATIONS=3
+          
           for ((i=1; i<=$ITERATIONS; i++))
           do
             echo "🚀 Running iteration $i/$ITERATIONS..."
@@ -46,10 +49,16 @@ jobs:
           git config --global user.name "github-actions"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          # 添加并提交变更
-          git add Fission_domain.txt Fission_ip.txt
-          git diff-index --quiet HEAD || git commit -m "Auto-update discovery results [skip ci]"
-          git push
+          # 添加变更的文件
+          git add Fission_domain.txt Fission_ip.txt dns_result.txt
+          
+          # 检查是否有变更需要提交
+          if [[ -n $(git status --porcelain) ]]; then
+            git commit -m "Auto-update discovery results [skip ci]"
+            git push
+          else
+            echo "No changes to commit"
+          fi
 
       - name: Archive results
         uses: actions/upload-artifact@v4
