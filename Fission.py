@@ -18,7 +18,6 @@ ips = "Fission_ip.txt"
 domains = "Fission_domain.txt"
 dns_result = "dns_result.txt"
 
-
 # 并发数配置
 max_workers_request = 20   # 并发请求数量
 max_workers_dns = 50       # 并发DNS查询数量
@@ -106,7 +105,9 @@ def fetch_domains_concurrently(ip_addresses):
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers_request) as executor:
         future_to_ip = {executor.submit(fetch_domains_for_ip, ip, session): ip for ip in ip_addresses}
         for future in concurrent.futures.as_completed(future_to_ip):
-            domains.extend(future.result())
+            result = future.result()
+            if result:
+                domains.extend(result)
 
     return list(set(domains))
 
@@ -121,78 +122,104 @@ def perform_dns_lookups(domain_filename, result_filename, unique_ipv4_filename):
     try:
         # 读取域名列表
         with open(domain_filename, 'r') as file:
-            domains = file.read().splitlines()
+            domains = [d.strip() for d in file.readlines() if d.strip()]
+        
+        if not domains:
+            print("No domains to perform DNS lookup")
+            return
 
         # 创建一个线程池并执行DNS查询
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers_dns) as executor:
             results = list(executor.map(dns_lookup, domains))
 
         # 写入查询结果到文件
-        with open(result_filename, 'w') as output_file:
+        with open(result_filename, 'a') as output_file:  # 改为追加模式
             for domain, output in results:
-                output_file.write(output)
+                output_file.write(f"--- DNS Lookup for {domain} ---\n")
+                output_file.write(output + "\n\n")
 
         # 从结果文件中提取所有IPv4地址
         ipv4_addresses = set()
         for _, output in results:
             ipv4_addresses.update(re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', output))
 
-        with open(unique_ipv4_filename, 'r') as file:
-            exist_list = {ip.strip() for ip in file}
+        # 读取现有IP（避免重复）
+        existing_ips = set()
+        if os.path.exists(unique_ipv4_filename):
+            with open(unique_ipv4_filename, 'r') as file:
+                existing_ips = {ip.strip() for ip in file if ip.strip()}
 
         # 检查IP地址是否为公网IP
-        filtered_ipv4_addresses = set()
+        new_ips = set()
         for ip in ipv4_addresses:
             try:
                 ip_obj = ipaddress.ip_address(ip)
-                if ip_obj.is_global:
-                    filtered_ipv4_addresses.add(ip)
+                if ip_obj.is_global and ip not in existing_ips:
+                    new_ips.add(ip)
             except ValueError:
-                # 忽略无效IP地址
                 continue
         
-        filtered_ipv4_addresses.update(exist_list)
-
-        # 保存IPv4地址
-        with open(unique_ipv4_filename, 'w') as output_file:
-            for address in filtered_ipv4_addresses:
-                output_file.write(address + '\n')
+        # 保存新发现的IPv4地址
+        if new_ips:
+            print(f"Found {len(new_ips)} new IP addresses")
+            with open(unique_ipv4_filename, 'a') as output_file:  # 改为追加模式
+                for address in new_ips:
+                    output_file.write(address + '\n')
+        else:
+            print("No new IP addresses found")
 
     except Exception as e:
         print(f"Error performing DNS lookups: {e}")
 
 # 主函数
 def main():
-    # 判断是否存在IP文件
-    if not os.path.exists(ips):
-        with open(ips, 'w') as file:
-            file.write("")
+    print("="*50)
+    print("Starting Fission Asset Discovery")
+    print("="*50)
     
-    # 判断是否存在域名文件
-    if not os.path.exists(domains):
-        with open(domains, 'w') as file:
-            file.write("")
-
+    # 确保文件存在
+    for filename in [ips, domains, dns_result]:
+        if not os.path.exists(filename):
+            with open(filename, 'w') as f:
+                pass
+    
     # IP反查域名
     with open(ips, 'r') as ips_txt:
-        ip_list = [ip.strip() for ip in ips_txt]
-
-    domain_list = fetch_domains_concurrently(ip_list)
-    print("域名列表为")
-    print(domain_list)
-    with open("Fission_domain.txt", "r") as file:
-        exist_list = [domain.strip() for domain in file]
-
-    domain_list = list(set(domain_list + exist_list))
-
-    with open("Fission_domain.txt", "w") as output:
-        for domain in domain_list:
-            output.write(domain + "\n")
+        ip_list = [ip.strip() for ip in ips_txt if ip.strip()]
+    
+    if ip_list:
+        print(f"Found {len(ip_list)} IPs for domain discovery")
+        domain_list = fetch_domains_concurrently(ip_list)
+        
+        # 读取现有域名（避免重复）
+        existing_domains = set()
+        if os.path.exists(domains):
+            with open(domains, 'r') as f:
+                existing_domains = {d.strip() for d in f if d.strip()}
+        
+        # 过滤新域名
+        new_domains = [d for d in domain_list if d not in existing_domains]
+        
+        # 追加新域名到文件
+        if new_domains:
+            print(f"Found {len(new_domains)} new domains")
+            with open(domains, 'a') as output:  # 改为追加模式
+                for domain in new_domains:
+                    output.write(domain + "\n")
+        else:
+            print("No new domains found")
+    else:
+        print("No IPs available for domain discovery")
+    
     print("IP -> 域名 已完成")
 
     # 域名解析IP
     perform_dns_lookups(domains, dns_result, ips)
     print("域名 -> IP 已完成")
+    
+    print("="*50)
+    print("Discovery process completed")
+    print("="*50)
 
 # 程序入口
 if __name__ == '__main__':
